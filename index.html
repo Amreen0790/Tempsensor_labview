@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Temperature Output Model — LabVIEW-Style</title>
+<style>
+  /* ===== LabVIEW Classic-ish Skin ===== */
+  :root{
+    --panel:#d9d9d9; --bevel-light:#ffffff; --bevel-dark:#9aa0a6; --text:#111;
+    --group:#ececec; --border:#b5b9bf; --accent:#0078d7;
+    --green:#2ecc71; --red:#ff4d4f; --off:#668;
+  }
+  html,body{height:100%}
+  body{
+    margin:0; background:linear-gradient(#efefef,#e2e2e2);
+    font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; color:var(--text);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .panel{
+    width:min(1040px,100%); background:var(--panel);
+    border:1px solid var(--border);
+    box-shadow: inset 1px 1px 0 var(--bevel-light), inset -1px -1px 0 var(--bevel-dark),
+                0 24px 60px rgba(0,0,0,.15);
+    border-radius:6px; padding:18px;
+  }
+  h1{margin:0 0 8px; font-size:20px}
+  .muted{color:#555; margin:0 0 10px}
+
+  .grid{display:grid; gap:12px; grid-template-columns: 280px 1fr;}
+  @media (max-width:860px){ .grid{grid-template-columns: 1fr} }
+
+  /* Group box */
+  .group{
+    background:var(--group); border:1px solid var(--border); border-radius:6px; padding:12px;
+    box-shadow: inset 1px 1px 0 var(--bevel-light), inset -1px -1px 0 var(--bevel-dark);
+  }
+  .title{font-weight:700; margin:0 0 6px}
+
+  /* Controls column */
+  .vcol{display:flex; gap:12px; align-items:flex-end}
+  .vslider{
+    writing-mode: bt-lr; appearance: slider-vertical; -webkit-appearance: slider-vertical;
+    height:280px; width:42px;
+    background:transparent;
+  }
+  .num{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:8px 10px; border:1px solid var(--border); background:#fff; border-radius:6px;
+    box-shadow: inset 1px 1px 0 var(--bevel-light), inset -1px -1px 0 var(--bevel-dark);
+    min-width:84px; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-weight:700;
+  }
+  input[type="number"], input[type="text"]{
+    border:0; outline:0; background:transparent; width:90px; font:inherit; text-align:right;
+  }
+  .btnbar{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
+  .btn{
+    padding:8px 12px; border:1px solid var(--border); background:#f6f6f6; border-radius:6px; cursor:pointer;
+    box-shadow: inset 1px 1px 0 var(--bevel-light), inset -1px -1px 0 var(--bevel-dark);
+  }
+  .btn.primary{background:#e9f3ff; border-color:#b6d6ff}
+  .btn.danger{background:#ffe9e9; border-color:#ffbcbc}
+  .btn:disabled{opacity:.5; cursor:not-allowed}
+
+  /* Indicators column */
+  .indgrid{display:grid; grid-template-columns: 160px 1fr; gap:12px}
+  @media (max-width:520px){ .indgrid{grid-template-columns:1fr} }
+
+  .thermoBox{
+    position:relative; height:320px; background:#fdfdfd; border:1px solid var(--border); border-radius:6px;
+    box-shadow: inset 1px 1px 0 var(--bevel-light), inset -1px -1px 0 var(--bevel-dark);
+    display:flex; align-items:flex-end; justify-content:center; overflow:hidden;
+  }
+  .mercury{width:60px; background:linear-gradient(#69b7ff,#c93030); border-radius:6px 6px 10px 10px;}
+  .thermoScale{
+    position:absolute; right:6px; top:6px; bottom:6px; width:56px; display:flex; flex-direction:column; justify-content:space-between;
+    color:#333; font:12px ui-monospace,monospace; align-items:flex-end;
+  }
+  .leds{display:flex; gap:14px; align-items:center}
+  .led{
+    width:20px; height:20px; border-radius:50%; background:#6b7280; border:1px solid #3333;
+    box-shadow: inset 0 0 0 2px #0002, 0 0 0 1px #fff inset;
+  }
+  .led.on.green{background:var(--green); box-shadow:0 0 8px var(--green), inset 0 0 0 2px #0002}
+  .led.on.red{background:var(--red); box-shadow:0 0 8px var(--red), inset 0 0 0 2px #0002}
+
+  .msg{
+    min-height:40px; background:#fff; border:1px solid var(--border); border-radius:6px; padding:8px 10px;
+    box-shadow: inset 1px 1px 0 var(--bevel-light), inset -1px -1px 0 var(--bevel-dark);
+    display:flex; align-items:center;
+  }
+
+  .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+  .meta{color:#333; font-size:12px}
+
+  /* Log table (like an output indicator) */
+  table{width:100%; border-collapse:collapse; font-family:ui-monospace,monospace; font-size:12px}
+  th,td{border:1px solid var(--border); padding:6px 8px; text-align:right}
+  th{background:#f3f3f3}
+  td.left, th.left{text-align:left}
+</style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Temperature Output Model (LabVIEW-Style)</h1>
+    <p class="muted">Rule: convert °C→°F and compare with setpoint. If <b>°F &gt; setpoint</b> ⇒ <span style="color:#ff4d4f">RED</span> LED & “Turn OFF the system”. Else ⇒ <span style="color:#2ecc71">GREEN</span> LED & “System is safe”.</p>
+
+    <div class="grid">
+      <!-- Controls -->
+      <section class="group">
+        <div class="title">Controls</div>
+
+        <div class="vcol">
+          <input id="cSlider" class="vslider" type="range" min="0" max="100" step="1" value="25" />
+          <div>
+            <div class="row"><span>Temperature (°C)</span><span class="num"><input id="cRead" type="text" value="25" aria-label="°C value" />°C</span></div>
+            <div class="row" style="margin-top:8px"><span>Setpoint (°F)</span><span class="num"><input id="spInput" type="number" step="1" value="100" aria-label="Setpoint °F" />°F</span></div>
+          </div>
+        </div>
+
+        <div class="btnbar">
+          <button id="runBtn" class="btn primary">RUN</button>
+          <button id="stopBtn" class="btn danger">STOP</button>
+          <button id="exportBtn" class="btn">Export CSV</button>
+        </div>
+      </section>
+
+      <!-- Indicators -->
+      <section class="group">
+        <div class="title">Indicators</div>
+
+        <div class="indgrid">
+          <!-- Thermometer -->
+          <div>
+            <div class="row" style="justify-content:space-between">
+              <div>Thermometer (°F)</div>
+              <div class="num"><span id="fDig">77.0</span> °F</div>
+            </div>
+            <div class="thermoBox" aria-label="Thermometer">
+              <div id="mercury" class="mercury" style="height:0%"></div>
+              <div class="thermoScale">
+                <span>212</span><span>176</span><span>140</span><span>104</span><span>68</span><span>32</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Status / LEDs -->
+          <div>
+            <div class="row"><div>Status</div>
+              <div class="leds">
+                <div id="ledGreen" class="led"></div>
+                <div id="ledRed" class="led"></div>
+              </div>
+            </div>
+            <div id="message" class="msg">System is safe</div>
+
+            <div class="row" style="margin-top:8px">
+              <div class="meta">Loop: <span id="loopState">Stopped</span></div>
+              <div class="meta">Sample period: <span id="periodMs">200</span> ms</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Output Log (like LabVIEW indicator array/table) -->
+        <div class="title" style="margin-top:10px">Output Log</div>
+        <div class="group" style="background:#fff; padding:0;">
+          <table id="logTable" aria-label="Output log">
+            <thead>
+              <tr>
+                <th class="left">Time</th>
+                <th>°C</th>
+                <th>°F</th>
+                <th class="left">Status</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+      </section>
+    </div>
+  </div>
+
+<script>
+/* ===== Behavior (maps LabVIEW concepts to JS) =====
+   - While Loop  → setInterval tick() started by RUN, stopped by STOP
+   - Local Variables / Formula Node → cToF(c) used in update path
+   - LED indicators → class toggles .on.red / .on.green
+   - Single message display → #message
+   - Vertical slide with digital display → #cSlider + #cRead
+*/
+const cSlider  = document.getElementById('cSlider');
+const cRead    = document.getElementById('cRead');
+const spInput  = document.getElementById('spInput');
+const runBtn   = document.getElementById('runBtn');
+const stopBtn  = document.getElementById('stopBtn');
+const exportBtn= document.getElementById('exportBtn');
+
+const fDig     = document.getElementById('fDig');
+const mercury  = document.getElementById('mercury');
+const ledRed   = document.getElementById('ledRed');
+const ledGreen = document.getElementById('ledGreen');
+const message  = document.getElementById('message');
+const loopState= document.getElementById('loopState');
+const periodMs = document.getElementById('periodMs');
+const logTable = document.getElementById('logTable').querySelector('tbody');
+
+let timer = null;
+const SAMPLE_MS = 200; // ~5 Hz like a simple LabVIEW while-loop with Wait(ms)
+periodMs.textContent = SAMPLE_MS;
+
+const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+const cToF  = (c)=> c*1.8 + 32;
+
+function updateOnce(){
+  // Read inputs
+  const c = Number(cSlider.value);
+  cRead.value = c.toFixed(0);
+  const f = cToF(c);
+  const sp = Number(spInput.value);
+
+  // Digital °F
+  fDig.textContent = f.toFixed(1);
+
+  // Thermometer scale 32–212°F
+  const minF=32, maxF=212;
+  const clamped = clamp(f,minF,maxF);
+  const pct = ((clamped - minF) / (maxF - minF))*100;
+  mercury.style.height = pct + '%';
+
+  // Decision / LEDs / Message
+  const over = f > sp;
+  ledRed.className   = 'led' + (over ? ' on red' : '');
+  ledGreen.className = 'led' + (!over ? ' on green' : '');
+  message.textContent = over ? 'Please turn OFF the system' : 'System is safe';
+
+  // Log row (append)
+  const now = new Date().toLocaleTimeString();
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class="left">${now}</td><td>${c.toFixed(0)}</td><td>${f.toFixed(1)}</td><td class="left">${over?'Over setpoint':'Safe'}</td>`;
+  logTable.prepend(tr);
+  // keep last 50 rows
+  while(logTable.rows.length>50) logTable.deleteRow(50);
+}
+
+function startLoop(){
+  if(timer) return;
+  updateOnce();
+  timer = setInterval(updateOnce, SAMPLE_MS);
+  loopState.textContent = 'Running';
+  runBtn.disabled = true;
+}
+function stopLoop(){
+  if(timer){ clearInterval(timer); timer=null; }
+  loopState.textContent = 'Stopped';
+  runBtn.disabled = false;
+}
+
+function exportCSV(){
+  // Build CSV from current table (newest first)
+  const rows = [['Time','C','F','Status']];
+  [...logTable.rows].reverse().forEach(r=>{
+    rows.push([r.cells[0].textContent, r.cells[1].textContent, r.cells[2].textContent, r.cells[3].textContent]);
+  });
+  const csv = rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'temp_output_log.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* Wiring */
+cSlider.addEventListener('input', updateOnce);
+cRead.addEventListener('change', ()=>{ const v=Number(cRead.value)||0; cSlider.value = clamp(v,0,100); updateOnce(); });
+spInput.addEventListener('input', updateOnce);
+runBtn.addEventListener('click', startLoop);
+stopBtn.addEventListener('click', stopLoop);
+exportBtn.addEventListener('click', exportCSV);
+
+// First paint (panel idle)
+updateOnce();
+</script>
+</body>
+</html>
